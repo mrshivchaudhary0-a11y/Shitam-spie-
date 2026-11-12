@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Username Finder</title>
+<style>
+:root{--paper:#f2f4f7;--ink:#101828;--mute:#5b6676;--line:#d3d9e2;--hit:#0a7d5a;--act:#1d4ed8}
+@media (prefers-color-scheme:dark){:root{--paper:#12161c;--ink:#e6eaf0;--mute:#97a1b0;--line:#2a323d;--hit:#41c995;--act:#6f9bff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:680px;margin:0 auto;padding:40px 18px 64px}
+h1{font:600 2rem/1.15 ui-serif,Georgia,"Times New Roman",serif;margin:0 0 6px}
+.sub{margin:0 0 24px;color:var(--mute)}
+form{display:flex;gap:8px}
+input,button{font:inherit;padding:12px 14px;border-radius:6px}
+input{flex:1;min-width:0;border:1px solid var(--line);background:transparent;color:inherit}
+button{border:0;background:var(--act);color:#fff;font-weight:600;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+#status{margin:18px 0 12px;color:var(--mute);font-size:.92rem}
+progress{width:100%;height:4px;margin-top:8px;accent-color:var(--act)}
+.row{padding:12px 0 12px 12px;border-top:1px solid var(--line);border-left:3px solid var(--hit)}
+.row b{display:block}
+.row a{color:var(--act);font-size:.88rem;overflow-wrap:anywhere}
+.note{margin-top:28px;color:var(--mute);font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Username Finder</h1>
+<p class="sub">See which public sites have a profile under a username.</p>
+<form id="f">
+<input id="u" aria-label="Username" placeholder="username" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="40" required>
+<button id="go">Search</button>
+</form>
+<div id="status" aria-live="polite"></div>
+<progress id="bar" max="1" value="0" hidden></progress>
+<div id="out"></div>
+<p class="note">A match means a profile with this username exists. It does not prove the profile belongs to the person you are looking for.</p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let es;
+$('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('u').value.trim().replace(/^@+/, '');
+  if (!/^[A-Za-z0-9._-]{1,40}$/.test(name)) {
+    $('status').textContent = 'Use letters, numbers, dots, dashes or underscores (max 40).';
+    return;
+  }
+  if (es) es.close();
+  $('out').replaceChildren();
+  $('go').disabled = true;
+  $('bar').hidden = false;
+  $('bar').value = 0;
+  let total = 0, done = 0, found = 0, skipped = 0;
+  const show = finished => {
+    $('status').textContent =
+      (finished ? 'Finished: ' : 'Searching: ') + done + ' of ' + total + ' sites checked, ' + found + ' found' +
+      (skipped ? ', ' + skipped + ' could not be checked' : '') + '.';
+    $('bar').max = total || 1;
+    $('bar').value = done;
+  };
+  $('status').textContent = 'Starting search…';
+  es = new EventSource('/api/search?username=' + encodeURIComponent(name));
+  es.addEventListener('start', ev => { total = JSON.parse(ev.data).total; show(false); });
+  es.onmessage = ev => {
+    const r = JSON.parse(ev.data);
+    done++;
+    if (r.status === 'found') {
+      found++;
+      const row = document.createElement('div');
+      const site = document.createElement('b');
+      const link = document.createElement('a');
+      row.className = 'row';
+      site.textContent = r.site;
+      link.href = r.url;
+      link.textContent = r.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      row.append(site, link);
+      $('out').append(row);
+    } else if (r.status === 'error') {
+      skipped++;
+    }
+    show(false);
+  };
+  es.addEventListener('done', () => { es.close(); $('go').disabled = false; show(true); });
+  es.onerror = () => {
+    es.close();
+    $('go').disabled = false;
+    $('status').textContent = 'The search stopped. You may have reached the limit of 10 searches per minute. Wait a bit and try again.';
+  };
+});
+</script>
+</body>
+</html>
